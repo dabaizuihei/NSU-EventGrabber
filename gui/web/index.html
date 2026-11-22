@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NSU-EventGrabber</title>
+  <link rel="icon" href="NSU-EventGrabber.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark"><img src="NSU-EventGrabber.png" alt="NSU-EventGrabber" /></div>
+        <div class="brand-text">
+          <h1>NSU-EventGrabber</h1>
+          <p>成都东软学院 · 素质活动监控</p>
+        </div>
+      </div>
+      <div class="account">
+        <span class="dot" id="authDot"></span>
+        <div class="account-text">
+          <strong id="accountName">未登录</strong>
+          <small id="accountMeta">点右侧按钮打开登录窗口</small>
+        </div>
+        <button class="btn ghost small" id="btnLogin">登录</button>
+        <button class="btn ghost small hidden" id="btnLogout">退出</button>
+      </div>
+    </header>
+
+    <section class="statusbar">
+      <div class="status-left">
+        <span class="pill" id="runPill"><i></i><span id="runText">未运行</span></span>
+        <span class="meta" id="lastScan">尚未扫描</span>
+      </div>
+      <div class="status-right">
+        <div class="status-stats">
+          <div class="stat"><b id="statUnreg">0</b><span>未报名</span></div>
+          <div class="stat"><b id="statReg">0</b><span>已报名</span></div>
+        </div>
+        <div class="status-actions">
+          <button class="btn primary" id="btnToggle">开始监控</button>
+          <button class="btn ghost" id="btnScan">立即扫描</button>
+          <button class="btn ghost icon" id="btnSettings" title="设置">⚙</button>
+        </div>
+      </div>
+    </section>
+
+    <main class="content">
+      <section class="panel activities">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>活动</h2>
+            <span class="hint" id="activityHint">等待首次扫描</span>
+          </div>
+          <div class="tabs" id="tabs">
+            <button class="tab active" data-filter="all">全部</button>
+            <button class="tab" data-filter="open">未报名</button>
+            <button class="tab" data-filter="registered">已报名</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-status">状态</th>
+                <th>活动名称</th>
+                <th class="col-time">活动时间</th>
+                <th class="col-quota">剩余名额</th>
+                <th class="col-reg">报名时间</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="activityBody">
+              <tr><td colspan="6" class="empty">还没有数据，先点「立即扫描」</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel logs">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>运行日志</h2>
+          </div>
+          <button class="btn ghost small" id="btnClearLog">清空</button>
+        </div>
+        <div class="log" id="log"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="foot-copy">© 2026 <a class="foot-link" href="https://github.com/dabaizuihei" target="_blank" rel="noreferrer">dabaizuihei</a></span>
+      <span class="foot-status" id="footStatus"></span>
+      <a class="foot-link" href="https://github.com/dabaizuihei/NSU-EventGrabber" target="_blank" rel="noreferrer">github.com/dabaizuihei/NSU-EventGrabber</a>
+    </footer>
+  </div>
+
+  <!-- 设置 -->
+  <div class="modal hidden" id="settingsModal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>设置</h3>
+        <button class="btn ghost icon" data-close="settingsModal">✕</button>
+      </div>
+      <div class="settings-tabs" role="tablist">
+        <button class="settings-tab active" data-settings-tab="signup" role="tab">报名</button>
+        <button class="settings-tab" data-settings-tab="notify" role="tab">通知</button>
+        <button class="settings-tab" data-settings-tab="about" role="tab">关于</button>
+      </div>
+      <div class="modal-body settings-body">
+        <div class="settings-pane active" data-settings-pane="signup">
+          <div class="settings-grid">
+            <div class="field-row">
+              <label>扫描间隔（秒）</label>
+              <input type="number" id="setScanInterval" min="30" step="30" />
+            </div>
+            <div class="field-row">
+              <label>参加提醒（天）</label>
+              <input type="number" id="setUpcoming" min="0" step="1" />
+            </div>
+            <div class="field-row">
+              <label>自动报名</label>
+              <label class="switch"><input type="checkbox" id="setAutoRegister" /><span></span></label>
+            </div>
+            <div class="field-row">
+              <label>自动重登</label>
+              <label class="switch"><input type="checkbox" id="setAutoRelogin" /><span></span></label>
+            </div>
+            <div class="field-row">
+              <label>启动时自动监控</label>
+              <label class="switch"><input type="checkbox" id="setAutoMonitor" /><span></span></label>
+            </div>
+            <div class="field-row">
+              <label title="关闭主窗口后隐藏到系统托盘，监控继续运行">关闭窗口最小化到托盘</label>
+              <label class="switch"><input type="checkbox" id="setCloseToTray" /><span></span></label>
+            </div>
+            <div class="field-row">
+              <label>启动时检查更新</label>
+              <label class="switch"><input type="checkbox" id="setAutoCheckUpdate" /><span></span></label>
+            </div>
+            <div class="field-row">
+              <label>隐藏过期活动</label>
+              <label class="switch"><input type="checkbox" id="setHidePast" /><span></span></label>
+            </div>
+            <div class="field-row full">
+              <label>屏蔽词</label>
+              <div class="tag-editor">
+                <div class="tag-list" id="blocklistTags"></div>
+                <input type="text" class="tag-input" id="blocklistTagInput" data-tag-input="blocklist" placeholder="输入关键词或正则后回车" />
+                <button type="button" class="tag-add" data-add-tag="blocklist">添加</button>
+              </div>
+              <div class="tag-hint">显示和提醒，不自动报名</div>
+            </div>
+            <div class="field-row full">
+              <label>白名单</label>
+              <div class="tag-editor">
+                <div class="tag-list" id="includeTags"></div>
+                <input type="text" class="tag-input" id="includeTagInput" data-tag-input="include" placeholder="输入关键词或正则后回车" />
+                <button type="button" class="tag-add" data-add-tag="include">添加</button>
+              </div>
+              <div class="tag-hint">显示和提醒，且自动报名</div>
+            </div>
+            <div class="field-row full">
+              <label>黑名单</label>
+              <div class="tag-editor">
+                <div class="tag-list" id="excludeTags"></div>
+                <input type="text" class="tag-input" id="excludeTagInput" data-tag-input="exclude" placeholder="输入关键词或正则后回车" />
+                <button type="button" class="tag-add" data-add-tag="exclude">添加</button>
+              </div>
+              <div class="tag-hint">不显示不提醒，不自动报名</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-pane" data-settings-pane="notify">
+          <div class="settings-grid">
+            <div class="field-row full">
+              <label>通知渠道</label>
+              <div class="checks">
+                <label><input type="checkbox" value="desktop" data-notify /> 系统通知</label>
+                <label><input type="checkbox" value="webhook" data-notify /> Webhook</label>
+              </div>
+            </div>
+            <div class="field-row full">
+              <label>Webhook 地址</label>
+              <input type="text" id="setWebhook" placeholder="https://sctapi.ftqq.com/KEY.send" />
+            </div>
+            <div class="field-row full">
+              <button class="btn ghost" id="btnTestNotify">测试通知</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-pane" data-settings-pane="about">
+          <div class="about-box">
+            <div class="mark"><img src="NSU-EventGrabber.png" alt="NSU-EventGrabber" /></div>
+            <div>
+              <h4>NSU-EventGrabber</h4>
+              <p>成都东软学院 · 素质活动监控</p>
+            </div>
+          </div>
+          <div class="about-meta">
+            <div class="about-meta-item"><span>仓库</span><a href="https://github.com/dabaizuihei/NSU-EventGrabber" target="_blank" rel="noreferrer">github.com/dabaizuihei/NSU-EventGrabber</a></div>
+            <div class="about-meta-item"><span>许可证</span><a href="https://github.com/dabaizuihei/NSU-EventGrabber/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a></div>
+          </div>
+          <div class="about-update">
+            <div class="about-version"><span>版本</span><b id="aboutVersion">v1.0.2</b></div>
+            <span class="update-badge hidden" id="updateBadge"></span>
+            <button class="btn ghost small" id="btnCheckUpdate">检查更新</button>
+            <div class="about-update-text" id="updateState">尚未检查更新</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="btnResetSettings">恢复默认设置</button>
+        <button class="btn primary" id="btnSaveSettings">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nsu-event-grabber"
+version = "v1.0.2"
+description = "成都东软学院素质活动监控与自动报名（跨平台桌面客户端，零内核依赖）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "pywebview>=4.4",
+    "pystray>=0.19.5",
+    "Pillow>=10",
+]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6"]
+
+[tool.setuptools]
+py-modules = [
+    "auth",
+    "client",
+    "config",
+    "gui_launcher",
+    "login_webview",
+    "netutil",
+    "scanner",
+    "single_instance",
+    "state",
+    "tray",
+    "updater",
+    "version",
+]
+packages = ["gui", "notify"]
+
+[tool.setuptools.package-data]
+"gui" = ["web/*"]

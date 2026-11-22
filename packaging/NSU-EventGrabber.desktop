@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NSU-EventGrabber
+Comment=成都东软学院素质活动监控与自动报名
+Exec=NSU-EventGrabber
+Icon=NSU-EventGrabber
+Terminal=false
+Categories=Utility;
+StartupWMClass=NSU-EventGrabber

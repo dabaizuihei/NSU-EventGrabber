@@ -1,0 +1,20 @@
+# 依赖缓存与环境
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+build/
+dist/
+*.egg-info/
+
+# 敏感配置与运行状态（切勿提交）
+config.env
+settings.json
+state.json
+state.tmp
+credentials.json
+credentials.tmp

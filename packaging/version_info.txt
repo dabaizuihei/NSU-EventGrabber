@@ -1,0 +1,33 @@
+# PyInstaller Windows 版本资源：文件属性里的公司/发布者信息。
+VSVersionInfo(
+    ffi=FixedFileInfo(
+        filevers=(1, 0, 0, 0),
+        prodvers=(1, 0, 0, 0),
+        mask=0x3f,
+        flags=0x0,
+        OS=0x40004,
+        fileType=0x1,
+        subtype=0x0,
+        date=(0, 0),
+    ),
+    kids=[
+        StringFileInfo(
+            [
+                StringTable(
+                    "040904B0",
+                    [
+                        StringStruct("CompanyName", "dabaizuihei"),
+                        StringStruct("FileDescription", "NSU-EventGrabber"),
+                        StringStruct("FileVersion", "v1.0.2"),
+                        StringStruct("InternalName", "NSU-EventGrabber"),
+                        StringStruct("LegalCopyright", "Copyright (C) 2026 dabaizuihei"),
+                        StringStruct("OriginalFilename", "NSU-EventGrabber-Windows-x86_64.exe"),
+                        StringStruct("ProductName", "NSU-EventGrabber"),
+                        StringStruct("ProductVersion", "v1.0.2"),
+                    ],
+                )
+            ]
+        ),
+        VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+    ],
+)
