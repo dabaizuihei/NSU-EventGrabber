@@ -114,7 +114,11 @@ def _fresh_cache_dir(base: Path) -> Path:
 class _Bridge:
     """暴露给页面 JS 的回调对象。"""
 
-    def __init__(self, validator: Optional[Callable[[str, str], bool]] = None) -> None:
+    def __init__(
+        self,
+        validator: Optional[Callable[[str, str], bool]] = None,
+        on_token: Optional[Callable[["_Bridge"], None]] = None,
+    ) -> None:
         self._access_token = ""
         self._refresh_token = ""
         # 注意：必须是下划线开头的私有属性。pywebview 会递归 introspect js_api
@@ -126,6 +130,8 @@ class _Bridge:
         self._closed_event = threading.Event()
         self._script_ready = threading.Event()
         self._validator = validator
+        # token 校验通过后立即回调（子进程用它抢先落盘结果，不等 GUI 收尾）。
+        self._on_token = on_token
         self._lock = threading.Lock()
         self._inflight: set[str] = set()
         self._rejected: set[str] = set()
@@ -140,8 +146,11 @@ class _Bridge:
     def report_token(self, access: str, refresh: str = "") -> bool:
         """页面拿到 token 后调用。
 
-        返回 False 表示 token 不可用，页面脚本会清除 localStorage 并要求重新登录；
-        只有校验通过才会关窗，避免“窗口闪一下就关闭，最后提示 token 校验失败”。
+        校验挪进后台线程：GObject 的 script-message 回调跑在 GTK 主循环上，
+        在这里做网络探活会把主线程卡死，destroy 的 idle_add 排不进队列，
+        表现为登录成功后窗口无法关闭（WebView2 在后台线程回调，没有此问题）。
+        返回 True 只代表“已受理校验”；被拒时通过页面回调 __nsuRejectToken
+        通知，页面脚本会清除 localStorage 并要求重新登录。
         """
         access = str(access or "").strip()
         refresh = str(refresh or "").strip()
@@ -150,28 +159,61 @@ class _Bridge:
         with self._lock:
             if self._token_event.is_set():
                 return True
-            if access in self._rejected or access in self._inflight:
+            if access in self._rejected:
                 return False
-            self._inflight.add(access)
-        try:
-            accepted = self._validate(access, refresh)
-        finally:
-            with self._lock:
-                self._inflight.discard(access)
-        if not accepted:
-            with self._lock:
-                self._rejected.add(access)
-            log.warning("旧Token无效，已忽略")
-            return False
-        with self._lock:
-            if self._token_event.is_set():
+            if access in self._inflight:
                 return True
-            self._access_token = access
-            self._refresh_token = refresh
-            self._token_event.set()
-        log.info("已获取Token，关闭登录窗口")
-        _request_close(self._window)
+            self._inflight.add(access)
+
+        def worker() -> None:
+            try:
+                accepted = self._validate(access, refresh)
+            except Exception:  # noqa: BLE001 - 校验异常交给父进程再复核
+                log.exception("Token校验异常，交由主进程复核")
+                accepted = True
+            finally:
+                with self._lock:
+                    self._inflight.discard(access)
+            with self._lock:
+                if self._token_event.is_set():
+                    return
+            if not accepted:
+                self._reject(access)
+                return
+            with self._lock:
+                if self._token_event.is_set():
+                    return
+                self._access_token = access
+                self._refresh_token = refresh
+                self._token_event.set()
+            log.info("已获取Token，关闭登录窗口")
+            if self._on_token is not None:
+                try:
+                    self._on_token(self)
+                except Exception:  # noqa: BLE001 - 回调异常不影响关窗
+                    log.exception("Token到手回调异常")
+            _request_close(self._window)
+
+        threading.Thread(target=worker, daemon=True).start()
         return True
+
+    def _reject(self, token: str) -> None:
+        """记录被拒 token，并把拒绝结果推回页面（对齐旧的同步返回 False 行为）。"""
+        with self._lock:
+            self._rejected.add(token)
+        log.warning("Token无效，已拒绝")
+        window = self._window
+        if window is None:
+            return
+        script = "window.__nsuRejectToken && window.__nsuRejectToken(%s)" % json.dumps(token)
+
+        def push() -> None:
+            try:
+                window.evaluate_js(script)
+            except Exception:  # noqa: BLE001 - 窗口可能已关闭
+                log.debug("拒绝通知推送失败", exc_info=True)
+
+        threading.Thread(target=push, daemon=True).start()
 
     def _validate(self, access: str, refresh: str) -> bool:
         if self._validator is None:
@@ -232,6 +274,11 @@ _JS_TEMPLATE = r"""
     announced = true;
     try { api.report_status('script-ready'); } catch (e) {}
   }
+
+  // Token 校验在 Python 侧后台线程进行；被拒时通过这个回调推回页面。
+  window.__nsuRejectToken = function (token) {
+    rejectToken(String(token || ''));
+  };
 
   function status(text) {
     var api = apiRef();
@@ -410,6 +457,36 @@ def build_inject_script(username: str, password: str, zoom: float = 1.0) -> str:
 
 
 # ---------------------------------------------------------------- 登录窗口
+def _stored_token_value(raw: object) -> str:
+    """还原平台 wsCache 写入 localStorage 的 token。
+
+    实际值是 ``{"v":"token",...}``，也可能是 JSON 字符串或纯 token。
+    Linux 的 Python 兜底轮询必须和页面里的 readToken 做同样的解包；
+    把整段对象 JSON 当成 Bearer token 会让活动接口返回 500「系统异常」。
+    """
+    if raw is None:
+        return ""
+    value: object = raw
+    if isinstance(value, dict):
+        value = value.get("v") or ""
+    elif isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            value = parsed.get("v") or ""
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, str):
+            value = parsed
+        value = value.strip().strip('"')
+    return str(value or "")
+
+
 def _token_ok(auth: AuthManager, access: str, refresh: str = "") -> bool:
     """只校验 access token，不刷新；避免把旧会话通过 refresh token 续回来。"""
     return auth.probe_token(access) != "unauthorized"
@@ -424,6 +501,7 @@ def _login_inprocess(
     timeout: int = 300,
     start_loop: bool = False,
     epoch: Optional[int] = None,
+    on_token: Optional[Callable[["_Bridge"], None]] = None,
 ) -> tuple[bool, str]:
     """打开登录窗口，返回 (是否成功, 提示语)。
 
@@ -442,7 +520,10 @@ def _login_inprocess(
 
     epoch = auth.epoch if epoch is None else epoch
     username = username or cfg.username
-    bridge = _Bridge(validator=lambda access, refresh: _token_ok(auth, access, refresh))
+    bridge = _Bridge(
+        validator=lambda access, refresh: _token_ok(auth, access, refresh),
+        on_token=on_token,
+    )
     try:
         screen = webview.screens[0]
         login_width = min(1200, max(820, int(screen.width) - 120))
@@ -531,6 +612,44 @@ def _login_inprocess(
             inject("fallback")
 
     threading.Thread(target=fallback_injector, daemon=True).start()
+
+    if sys.platform.startswith("linux"):
+        def storage_poller() -> None:
+            """WebKitGTK 下远程页面的 js_api 注入可能不生效，Python 侧定时读
+            localStorage 兜底；拿到 token 后走与 report_token 相同的校验与关窗流程。"""
+            poll_js = (
+                "(function(){try{return JSON.stringify({"
+                "a:localStorage.getItem('ACCESS_TOKEN'),"
+                "r:localStorage.getItem('REFRESH_TOKEN')});}catch(e){return 'null'}})()"
+            )
+            attempted: set[str] = set()
+            while time.time() < deadline:
+                if bridge._token_event.is_set() or bridge._closed_event.is_set():
+                    return
+                time.sleep(2.0)
+                if bridge._token_event.is_set() or bridge._closed_event.is_set():
+                    return
+                try:
+                    raw = window.evaluate_js(poll_js)
+                except Exception:  # noqa: BLE001 - 页面导航中或窗口未就绪
+                    continue
+                data = raw
+                if isinstance(data, str):
+                    try:
+                        data = json.loads(data)
+                    except (ValueError, TypeError):
+                        continue
+                if not isinstance(data, dict):
+                    continue
+                access = _stored_token_value(data.get("a"))
+                refresh = _stored_token_value(data.get("r"))
+                if not access or access in attempted or access in bridge._rejected:
+                    continue
+                attempted.add(access)
+                log.info("兜底轮询读到Token，走校验流程")
+                bridge.report_token(access, refresh)
+
+        threading.Thread(target=storage_poller, daemon=True).start()
 
     def activate_on_macos():
         """macOS 上窗口创建后主动置前；Windows 交给 pywebview 自己处理。"""
@@ -640,8 +759,11 @@ def _commit_login(
             return False, "登录已退出，取消本次登录"
         creds = auth.store.credentials
         creds.base_url = cfg.base_url
-        creds.tenant_id = cfg.tenant_id
-        creds.tenant_name = cfg.tenant_name
+        # 子进程可能已经解析出真实租户号；主进程的占位值 "1" 不能反过来覆盖它，
+        # 否则后续接口会一直 500「系统错误」。
+        if cfg.tenant_id and (cfg.tenant_id != "1" or not creds.tenant_id):
+            creds.tenant_id = cfg.tenant_id
+        creds.tenant_name = cfg.tenant_name or creds.tenant_name
         creds.username = username or cfg.username
         creds.access_token = access
         creds.refresh_token = refresh
@@ -893,10 +1015,25 @@ def run_login_child(payload_path: str, result_path: str) -> int:
         )
         store = CredentialStore(workdir / "credentials.json")
         auth = AuthManager(cfg, store)
+
+        def on_token(bridge: "_Bridge") -> None:
+            # token 校验通过的那一刻就把结果落盘，不等 GTK 主循环收尾：
+            # destroy 卡住时父进程也能立刻拿到结果并刷新主界面。
+            # 2.5 秒后窗口仍未自行关闭就强杀进程，窗口随之消失。
+            write_result({
+                "ok": True,
+                "message": "登录成功",
+                "username": payload.get("username") or "",
+                "access_token": bridge._access_token,
+                "refresh_token": bridge._refresh_token,
+            })
+            threading.Thread(target=_force_exit_after, args=(2.5,), daemon=True).start()
+
         ok, message = _login_inprocess(
             cfg, auth, username=payload.get("username") or "",
             password=payload.get("password") or "",
             timeout=timeout, start_loop=True, epoch=auth.epoch,
+            on_token=on_token,
         )
         result = {
             "ok": bool(ok),
@@ -926,3 +1063,10 @@ def _hard_stop(delay: float, write_result: Callable[[dict], None]) -> None:
     time.sleep(max(30.0, delay))
     write_result({"ok": False, "message": "登录窗口超时，已自动关闭"})
     os._exit(1)
+
+
+def _force_exit_after(delay: float) -> None:
+    """结果已落盘，窗口若因 GTK 收尾卡住而未关闭，到点直接杀掉子进程。"""
+    time.sleep(delay)
+    log.warning("登录窗口未能自行关闭，强制退出登录子进程")
+    os._exit(0)

@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "v1.0.2"
-  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.2' }}
+  APP_VERSION: "v1.0.3"
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.3' }}
 
 jobs:
   test:
@@ -36,7 +36,7 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; updating title to $APP_VERSION"
-            gh release edit "$RELEASE_TAG" --title "NSU-EventGrabber $APP_VERSION" --notes ""
+            gh release edit "$RELEASE_TAG" --title "NSU-EventGrabber $APP_VERSION" --notes "" --draft=false --latest=true
           else
             gh release create "$RELEASE_TAG" \
               --title "NSU-EventGrabber $APP_VERSION" \
@@ -109,7 +109,7 @@ jobs:
   linux:
     name: Linux x86_64
     needs: prepare
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install WebKitGTK
@@ -121,9 +121,8 @@ jobs:
               -o Acquire::Retries=2 -o Acquire::http::Timeout=15 \
               install -y --no-install-recommends \
               python3-venv python3-pip python3-gi python3-gi-cairo \
-              gir1.2-gtk-3.0 gir1.2-webkit2-4.0 \
-              gir1.2-ayatanaappindicator3-0.1 \
-              libgtk-3-0 libwebkit2gtk-4.0-37; then
+              gir1.2-gtk-3.0 gir1.2-webkit2-4.1 glib-networking \
+              gir1.2-ayatanaappindicator3-0.1; then
               exit 0
             fi
             sleep 10
@@ -145,9 +144,19 @@ jobs:
           cp packaging/NSU-EventGrabber.desktop "$APPDIR/usr/share/applications/"
           cp packaging/NSU-EventGrabber.desktop "$APPDIR/NSU-EventGrabber.desktop"
           cp packaging/NSU-EventGrabber.png "$APPDIR/NSU-EventGrabber.png"
-          cp packaging/NSU-EventGrabber.png \
-            "$APPDIR/usr/share/icons/hicolor/256x256/apps/NSU-EventGrabber.png"
-          ln -sf NSU-EventGrabber.png "$APPDIR/.DirIcon"
+          # 各尺寸目录必须放真实对应尺寸的图标，直接塞 1024 图会让部分桌面
+          # 环境（KDE / AppImageLauncher）显示成默认占位图标。
+          ./.venv/bin/python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          source = Image.open("packaging/NSU-EventGrabber.png").convert("RGBA")
+          for size in (128, 256, 512):
+              target = Path(f"dist/NSU-EventGrabber.AppDir/usr/share/icons/hicolor/{size}x{size}/apps")
+              target.mkdir(parents=True, exist_ok=True)
+              source.resize((size, size), Image.LANCZOS).save(target / "NSU-EventGrabber.png")
+          PY
+          cp packaging/NSU-EventGrabber.png "$APPDIR/.DirIcon"
           cat > "$APPDIR/AppRun" <<'EOF'
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "$0")")"

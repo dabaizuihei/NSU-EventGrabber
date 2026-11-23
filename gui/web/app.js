@@ -42,7 +42,7 @@
 
   const displayVersion = (value) => {
     const text = String(value || "").trim().replace(/^v/i, "");
-    return text ? `v${text}` : "v1.0.2";
+    return text ? `v${text}` : "v1.0.3";
   };
 
   const duration = (seconds) => {
@@ -459,8 +459,8 @@
     $("btnToggle").addEventListener("click", async () => {
       const bridge = api();
       if (!bridge) return;
-      const result = running ? await bridge.stop() : await bridge.start();
-      if (result && result.message) toast(running ? "正在停止" : "监控已启动", result.message, !result.ok);
+      if (running) await bridge.stop();
+      else await bridge.start();
       tick();
     });
 

@@ -886,7 +886,112 @@ class Api:
         return self.ctrl.check_update(force=bool(force))
 
 
+_GIO_TLS_MODULE_NAMES = ("libgiognutls.so", "libgioopenssl.so", "libgiotls.so")
+
+
+def _gio_module_has_tls(directory: Path) -> bool:
+    """判断目录里是否放着 GIO 的 TLS 后端模块。"""
+    return any((directory / name).exists() for name in _GIO_TLS_MODULE_NAMES)
+
+
+def _host_gio_module_dirs() -> list[Path]:
+    """宿主机可能的 GIO 模块目录（含发行版的多架构路径）。"""
+    patterns = (
+        "usr/lib/*/gio/modules",
+        "usr/lib64/gio/modules",
+        "usr/local/lib/*/gio/modules",
+        "usr/lib/gio/modules",
+    )
+    dirs: list[Path] = []
+    for pattern in patterns:
+        dirs.extend(path for path in Path("/").glob(pattern) if path.is_dir())
+    return dirs
+
+
+def _pick_gio_extra_modules(host_dirs: list[Path], bundled: Path) -> Optional[Path]:
+    """宿主机没有任何 TLS 后端模块时，返回包内模块目录；否则返回 None。"""
+    if any(_gio_module_has_tls(directory) for directory in host_dirs):
+        return None
+    if _gio_module_has_tls(bundled):
+        return bundled
+    return None
+
+
+def _prepare_gio_modules() -> None:
+    """宿主机缺 glib-networking 时，改用包内自带的 GIO TLS 模块。
+
+    GIO 找不到 TLS 后端只会退回 dummy 后端，WebKit 加载 https 页面时报
+    "TLS support is not available"（登录页因此打不开）。宿主机有模块时保持
+    原样，避免同一类型被注册两次。
+    """
+    bundled = Path(getattr(sys, "_MEIPASS", "") or "/nonexistent") / "gio" / "modules"
+    extra = _pick_gio_extra_modules(_host_gio_module_dirs(), bundled)
+    if extra is None:
+        return
+    parts = [part for part in os.environ.get("GIO_EXTRA_MODULES", "").split(":") if part]
+    if str(extra) not in parts:
+        parts.append(str(extra))
+        os.environ["GIO_EXTRA_MODULES"] = ":".join(parts)
+        log.info("宿主机缺少 GIO TLS 模块，改用包内副本：%s", extra)
+
+
+def _check_linux_gtk() -> None:
+    """Linux 启动前探测 GTK/WebKit 绑定；打包版不再内置 GTK 栈，全靠宿主机。
+
+    缺 GI 包（typelib 不存在）才提示安装命令；typelib 在但底层 so 加载失败时
+    原样透出 dlopen 错误，避免用户对着已经装好的包再白装一遍。
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    _prepare_gio_modules()
+    install_hint = (
+        "缺少 GTK3 / WebKitGTK 运行环境，请安装：\n"
+        "  sudo apt install gir1.2-gtk-3.0 gir1.2-webkit2-4.1\n"
+        "旧发行版请把 gir1.2-webkit2-4.1 换成 gir1.2-webkit2-4.0"
+    )
+    try:
+        import gi
+    except Exception as exc:
+        raise SystemExit(f"PyGObject(gi) 模块加载失败：{exc}\n{install_hint}")
+    try:
+        gi.require_version("Gtk", "3.0")
+        try:
+            gi.require_version("WebKit2", "4.1")
+        except ValueError:
+            gi.require_version("WebKit2", "4.0")
+        from gi.repository import Gtk, WebKit2  # noqa: F401
+    except ValueError as exc:
+        raise SystemExit(f"{exc}\n{install_hint}")
+    except Exception as exc:
+        raise SystemExit(
+            "GTK/WebKit 库加载失败；相关包已安装时通常是库版本冲突，"
+            f"不要重复安装。原始错误：\n{exc}"
+        )
+    # AppImage / 桌面环境的任务栏图标取自 GTK 默认窗口图标。pywebview 不设置它，
+    # 不显式指定时 Linux 会显示通用的可执行文件占位图标。这里统一用与
+    # Windows/macOS 相同的 logo，并且对未集成 .desktop 的 AppImage 也有效。
+    try:
+        icon_path = Path(__file__).with_name("web") / "NSU-EventGrabber.png"
+        if icon_path.exists():
+            Gtk.Window.set_default_icon_from_file(str(icon_path))
+    except Exception:  # noqa: BLE001 - 图标失败不影响启动
+        log.debug("设置窗口图标失败", exc_info=True)
+    try:
+        from gi.repository import Gio, GObject
+
+        backend = Gio.TlsBackend.get_default()
+        backend_name = GObject.type_name(backend.__gtype__) if backend is not None else ""
+        if not backend_name or "dummy" in backend_name.lower():
+            log.warning(
+                "当前系统没有可用的 GIO TLS 后端，登录页等 https 请求会失败"
+                "（TLS support is not available）；可执行 sudo apt install glib-networking"
+            )
+    except Exception:  # noqa: BLE001 - 仅用于诊断，不影响启动
+        log.debug("GIO TLS 后端检测失败", exc_info=True)
+
+
 def run_gui(config_path: Optional[str] = None, data_dir: Optional[str] = None) -> None:
+    _check_linux_gtk()
     cfg = load_config(config_path, data_dir)
     instance = SingleInstance(cfg.data_dir)
     if not instance.acquire():

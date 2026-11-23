@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsu-event-grabber"
-version = "v1.0.2"
+version = "v1.0.3"
 description = "成都东软学院素质活动监控与自动报名（跨平台桌面客户端，零内核依赖）"
 readme = "README.md"
 requires-python = ">=3.10"

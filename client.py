@@ -33,6 +33,10 @@ class NsuClient:
     def __init__(self, cfg: Config, auth) -> None:
         self.cfg = cfg
         self.auth = auth
+        # 网关对租户头很敏感：租户没解析出来时带 tenant-id 会直接返回
+        # 500「系统错误」。这里记录重试进度，首次 500 时逐步调整租户头。
+        self._tenant_variant = 0
+        self._use_tenant_header = True
 
     # ---- 底层请求 ----------------------------------------------------------
     def _request(
@@ -54,8 +58,9 @@ class NsuClient:
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
             "Referer": self.cfg.base_url + "/",
-            "tenant-id": self.cfg.tenant_id,
         }
+        if self._use_tenant_header and self.cfg.tenant_id:
+            headers["tenant-id"] = self.cfg.tenant_id
         body = None
         if json_body is not None:
             body = json.dumps(json_body).encode("utf-8")
@@ -89,7 +94,34 @@ class NsuClient:
                 )
             raise ApiError(401, "登录态失效")
         if code not in (0, 200):
-            raise ApiError(code, str(payload.get("msg") or "未知业务错误"))
+            message = str(payload.get("msg") or "未知业务错误")
+            log.error(
+                "请求失败 %s %s%s status=%s code=%s msg=%s tenant=%s",
+                method, path,
+                ("?" + urllib.parse.urlencode(params)) if params else "",
+                status, code, message, self.cfg.tenant_id or "(空)",
+            )
+            if _retry and code == 500 and auth:
+                # 租户头不被接受时网关统一回 500「系统错误」。
+                # 先强制重新解析租户；仍失败就不带租户头再试一次。
+                if self._tenant_variant == 0:
+                    self._tenant_variant = 1
+                    self.auth.resolve_tenant()
+                    log.warning("接口返回 500，重新解析租户后重试：%s", path)
+                    return self._request(
+                        method, path, params=params, json_body=json_body,
+                        auth=auth, _retry=_retry,
+                    )
+                if self._tenant_variant == 1:
+                    self._tenant_variant = 2
+                    self._use_tenant_header = False
+                    log.warning("接口返回 500，改为不带 tenant-id 重试：%s", path)
+                    return self._request(
+                        method, path, params=params, json_body=json_body,
+                        auth=auth, _retry=_retry,
+                    )
+            raise ApiError(code, message)
+        self._tenant_variant = 0
         return payload.get("data")
 
     # ---- 业务接口 ----------------------------------------------------------
@@ -102,7 +134,8 @@ class NsuClient:
         current = 1
         while True:
             data = self._request(
-                "GET", API_SQUARE, params={"current": current, "size": self.cfg.page_size}
+                "GET", API_SQUARE,
+                params={"current": current, "size": self.cfg.page_size},
             )
             records = (data or {}).get("records") or []
             collected.extend(records)

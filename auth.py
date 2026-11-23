@@ -321,7 +321,12 @@ class AuthManager:
         租户头带错会直接 403「您无权访问该租户的数据」，所以这里显式解析一次。
         """
         if self._tenant_ready:
-            return
+            # 登录/退出可能把 cfg 上的租户重置回占位值 "1"，此时必须重新解析，
+            # 否则会带着错误租户头把请求全打成 500「系统错误」。
+            tid = str(self.cfg.tenant_id or "")
+            if tid and tid != "1" and len(tid) >= 10:
+                return
+            self._tenant_ready = False
         tid = str(self.cfg.tenant_id or "")
         if tid and tid != "1" and len(tid) >= 10:
             self._tenant_ready = True
@@ -354,7 +359,10 @@ class AuthManager:
                 return False
             creds = self.store.credentials
             creds.base_url = self.cfg.base_url
-            creds.tenant_id = self.cfg.tenant_id
+            # 不要把已解析出的雪花号租户覆盖成占位的 "1"，否则网关会一直回
+            # 500「系统错误」（服务端要求 tenant-id 为真实租户）。
+            if self.cfg.tenant_id and (self.cfg.tenant_id != "1" or not creds.tenant_id):
+                creds.tenant_id = self.cfg.tenant_id
             if data.get("accessToken"):
                 creds.access_token = str(data["accessToken"])
             if data.get("refreshToken"):
@@ -422,12 +430,20 @@ class AuthManager:
                 if not self.is_current(epoch):
                     return
                 self.cfg.tenant_name = str(data["name"])
-                if data.get("id"):
-                    self.cfg.tenant_id = str(data["id"])
+                tenant_id = str(
+                    data.get("id") or data.get("tenantId") or data.get("tenant_id") or ""
+                )
+                if tenant_id:
+                    self.cfg.tenant_id = tenant_id
                 self.store.credentials.tenant_name = self.cfg.tenant_name
                 self.store.credentials.tenant_id = self.cfg.tenant_id
                 self.store.save()
                 self._tenant_ready = True
+        else:
+            log.warning(
+                "租户解析未取到有效数据：status=%s payload=%s",
+                status, str(payload)[:200],
+            )
 
     def fetch_profile(self, epoch: Optional[int] = None) -> None:
         """登录后拉一次用户信息，用于界面显示姓名/学号。"""

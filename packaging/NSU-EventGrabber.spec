@@ -37,6 +37,14 @@ if sys.platform.startswith("linux"):
         if libpath.exists():
             binaries.append((str(libpath), "."))
 
+    # GIO 的插件模块（glib-networking 提供的 TLS 后端等）作为兜底随包携带：
+    # 宿主机没装 glib-networking 时，WebKit 加载 https 页面会报
+    # "TLS support is not available"，启动时按需通过 GIO_EXTRA_MODULES 启用。
+    gio_modules = Path(libdir or "") / "gio" / "modules"
+    if gio_modules.is_dir():
+        for module in sorted(gio_modules.glob("*.so*")):
+            binaries.append((str(module), "gio/modules"))
+
 a = Analysis(
     [str(ROOT / "gui_launcher.py")],
     pathex=[str(ROOT)],
@@ -49,6 +57,51 @@ a = Analysis(
     excludes=["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6"],
     noarchive=False,
 )
+
+if sys.platform.startswith("linux"):
+    import re
+
+    # gi hook 会把构建机的整套 GTK/GLib 栈连同全部传递依赖打进包里。新系统上
+    # pywebview 加载宿主 WebKit 4.1 时，进程里同时存在打包的旧库和系统的新库，
+    # Gtk.Application 的 g_application_run 拿不到默认主上下文，窗口起不来。
+    # 策略：凡是来自构建机系统目录的共享库一律不带（libpython 除外，
+    # WebKitWebProcess 等辅助进程也一样），运行时全部使用宿主机同款库，
+    # 等同源码运行。libmount/libblkid/libuuid/libstdc++/libgcc_s/libpcre2/
+    # libz/libgnutls/libssl 这类传递依赖由此一并交给宿主机，避免新旧混载。
+    gtk_lib_re = re.compile(
+        r"^(?:lib)?(?:glib|gobject|gmodule|gthread|gio|girepository|gtk|gdk|"
+        r"pango|atk|atspi|cairo|harfbuzz|graphite2|fribidi|epoxy|webkit|"
+        r"javascriptcore|soup|ffi|json-glib|mount|blkid|uuid|stdc\+\+|gcc_s|"
+        r"pcre2|z\.|gnutls|nettle|hogweed|tasn1|idn2?|unistring|ssl|crypto)"
+    )
+    # 版本化的系统共享库：libfoo.so / libfoo.so.1.2.3
+    versioned_so_re = re.compile(r"^lib.+\.(?:so|so\.[0-9])")
+
+    def _is_system_runtime(entry) -> bool:
+        dest, src = str(entry[0]), str(entry[1])
+        name = Path(dest).name
+        if name.startswith("libpython"):
+            # 解释器本体必须随包携带。
+            return False
+        if "gio/modules" in src or "gio/modules" in dest:
+            # GIO 插件模块（TLS 后端）随包携带，宿主机缺 glib-networking 时兜底。
+            return False
+        if "webkit" in name or "webkit" in src:
+            # WebKitWebProcess / WebKitNetworkProcess 等辅助进程必须用宿主机的。
+            return True
+        if src.startswith(("/lib/", "/usr/lib", "/lib64/", "/usr/local/lib")):
+            if versioned_so_re.match(name) or gtk_lib_re.match(name):
+                return True
+        return bool(gtk_lib_re.match(name))
+
+    a.binaries = [entry for entry in a.binaries if not _is_system_runtime(entry)]
+    a.datas = [
+        entry
+        for entry in a.datas
+        if not entry[0].endswith((".typelib", ".gir"))
+        and "gi_typelibs" not in entry[0]
+    ]
+
 pyz = PYZ(a.pure)
 
 if IS_WINDOWS:
@@ -110,8 +163,8 @@ else:
             info_plist={
                 "CFBundleDisplayName": "NSU-EventGrabber",
                 "CFBundleName": "NSU-EventGrabber",
-                "CFBundleShortVersionString": "v1.0.2",
-                "CFBundleVersion": "v1.0.2",
+                "CFBundleShortVersionString": "v1.0.3",
+                "CFBundleVersion": "v1.0.3",
                 "NSHighResolutionCapable": True,
             },
         )

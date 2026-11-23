@@ -14,6 +14,7 @@ import logging
 import subprocess
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -198,14 +199,22 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(bridge._refresh_token, "good-refresh")
 
     def test_stale_token_is_rejected_and_window_stays_open(self) -> None:
+        """校验在后台线程进行（GTK 主循环不能被探活卡死）：report_token 返回
+        True 只代表“已受理”，被拒后 token 进入 _rejected，窗口保持打开。"""
         window = self.FakeWindow()
         bridge = login_webview._Bridge(validator=lambda access, refresh: False)
         bridge._window = window
 
-        self.assertFalse(bridge.report_token("stale-token", ""))
+        self.assertTrue(bridge.report_token("stale-token", ""))
         self.assertFalse(bridge._token_event.is_set())
+        deadline = time.time() + 2
+        while time.time() < deadline and "stale-token" not in bridge._rejected:
+            time.sleep(0.05)
+        self.assertIn("stale-token", bridge._rejected)
         self.assertFalse(window.destroyed.wait(0.3))
         self.assertEqual(bridge._access_token, "")
+        # 已拒 token 再次上报时立即拒绝，不再重复校验
+        self.assertFalse(bridge.report_token("stale-token", ""))
 
     def test_validator_exception_does_not_block_login(self) -> None:
         window = self.FakeWindow()
@@ -214,6 +223,20 @@ class BridgeTest(unittest.TestCase):
 
         self.assertTrue(bridge.report_token("token", ""))
         self.assertTrue(window.destroyed.wait(2))
+
+
+class StoredTokenTest(unittest.TestCase):
+    def test_linux_fallback_unwraps_platform_storage_values(self) -> None:
+        cases = {
+            "wsCache JSON": (json.dumps({"v": "real-token", "e": None}), "real-token"),
+            "decoded wsCache": ({"v": "real-token", "e": None}, "real-token"),
+            "JSON string": (json.dumps("real-token"), "real-token"),
+            "plain token": ("real-token", "real-token"),
+            "empty": (None, ""),
+        }
+        for name, (raw, expected) in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(login_webview._stored_token_value(raw), expected)
 
 
 class InjectedScriptTest(unittest.TestCase):

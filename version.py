@@ -1,6 +1,6 @@
 """应用版本与发布信息的单一来源。"""
 
-APP_VERSION = "v1.0.2"
+APP_VERSION = "v1.0.3"
 GITHUB_REPOSITORY = "dabaizuihei/NSU-EventGrabber"
 RELEASES_URL = f"https://github.com/{GITHUB_REPOSITORY}/releases"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"

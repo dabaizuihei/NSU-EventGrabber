@@ -19,11 +19,17 @@
 前往Releases下载：<https://github.com/dabaizuihei/NSU-EventGrabber/releases/latest>
 
 - Windows：下载 `NSU-EventGrabber-Windows-x86_64.exe`
-- macOS Apple Silicon：下载 `NSU-EventGrabber-macOS-arm64.dmg`。
-- macOS Intel：下载 `NSU-EventGrabber-macOS-x86_64.dmg`。
+- macOS Apple Silicon：下载 `NSU-EventGrabber-macOS-arm64.dmg`
+- macOS Intel：下载 `NSU-EventGrabber-macOS-x86_64.dmg`
+  打开 DMG 后把 `.app` 拖进「应用程序」
 
-  打开 DMG 后把 `.app` 拖进「应用程序」。提示「无法验证开发者」时，在 Finder 里右键选择「打开」。
-- Linux：下载 `NSU-EventGrabber-Linux-x86_64.AppImage`，赋予执行权限后运行。系统需要 WebKitGTK：
+  提示「无法验证开发者」时，在 Finder 里右键选择「打开」
+- Linux：下载 NSU-EventGrabber-Linux-x86\_64.AppImage，赋予执行权限后运行
+
+  ```bash
+  chmod 777 NSU-EventGrabber-Linux-x86_64.AppImage
+  ```
+  系统需要 WebKitGTK：
   ```bash
   # Ubuntu 24.04
   sudo apt install python3-gi gir1.2-webkit2-4.1

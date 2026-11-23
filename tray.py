@@ -72,6 +72,19 @@ class TrayController:
                 if not hasattr(icon, "run_detached"):
                     raise RuntimeError("当前 pystray 不支持 macOS detached 模式")
                 icon.run_detached()
+            elif sys.platform.startswith("linux"):
+                # Linux 的 appindicator 后端会在 run() 里自建 GLib 主循环。放到
+                # 线程里跑会先抢占默认主上下文，随后 pywebview 的 g_application_run()
+                # 报 "cannot acquire the default main context"，窗口直接起不来
+                # （没装 appindicator 时退回 Xorg 后端，不用 GLib，所以不冲突）。
+                # run_detached 只把后续操作以 idle 回调排进主窗口已有的 GTK 主循环。
+                try:
+                    icon.run_detached()
+                except NotImplementedError:
+                    self._thread = threading.Thread(
+                        target=icon.run, name="nsu-tray", daemon=True
+                    )
+                    self._thread.start()
             else:
                 self._thread = threading.Thread(
                     target=icon.run, name="nsu-tray", daemon=True
@@ -82,7 +95,10 @@ class TrayController:
         except Exception as exc:  # noqa: BLE001 - 托盘异常只影响关闭行为
             self._available = False
             self._icon = None
-            log.warning("托盘启动失败：%s", exc)
+            hint = ""
+            if sys.platform.startswith("linux"):
+                hint = "；如需托盘可安装 gir1.2-ayatanaappindicator3-0.1"
+            log.warning("托盘启动失败：%s%s", exc, hint)
             return False
 
     @staticmethod

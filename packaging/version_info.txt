@@ -18,12 +18,12 @@ VSVersionInfo(
                     [
                         StringStruct("CompanyName", "dabaizuihei"),
                         StringStruct("FileDescription", "NSU-EventGrabber"),
-                        StringStruct("FileVersion", "v1.0.2"),
+                        StringStruct("FileVersion", "v1.0.3"),
                         StringStruct("InternalName", "NSU-EventGrabber"),
                         StringStruct("LegalCopyright", "Copyright (C) 2026 dabaizuihei"),
                         StringStruct("OriginalFilename", "NSU-EventGrabber-Windows-x86_64.exe"),
                         StringStruct("ProductName", "NSU-EventGrabber"),
-                        StringStruct("ProductVersion", "v1.0.2"),
+                        StringStruct("ProductVersion", "v1.0.3"),
                     ],
                 )
             ]
