@@ -58,6 +58,7 @@ SETTINGS_KEYS = {
     "HIDE_PAST_REGISTERED",
     "CLOSE_TO_TRAY",
     "AUTO_CHECK_UPDATE",
+    "THEME",
 }
 
 
@@ -126,6 +127,7 @@ class Config:
     hide_past_registered: bool = True
     close_to_tray: bool = True
     auto_check_update: bool = True
+    theme: str = "system"
 
     block_re: re.Pattern = field(init=False, repr=False)
 
@@ -161,6 +163,7 @@ class Config:
             "hide_past_registered": self.hide_past_registered,
             "close_to_tray": self.close_to_tray,
             "auto_check_update": self.auto_check_update,
+            "theme": self.theme,
         }
 
 
@@ -239,7 +242,14 @@ def load_config(config_path: str | Path | None = None, data_dir: str | None = No
         hide_past_registered=_truthy(get("HIDE_PAST_REGISTERED"), True),
         close_to_tray=_truthy(get("CLOSE_TO_TRAY"), True),
         auto_check_update=_truthy(get("AUTO_CHECK_UPDATE"), True),
+        theme=_theme_mode(get("THEME")),
     )
+
+
+def _theme_mode(value) -> str:
+    """主题只有三档：跟随系统 / 浅色 / 深色；未知值一律回到跟随系统。"""
+    text = str(value or "").strip().lower()
+    return text if text in {"system", "light", "dark"} else "system"
 
 
 def _validate_regex(value: str, label: str) -> None:
@@ -270,6 +280,7 @@ _SETTING_CASTERS = {
     "HIDE_PAST_REGISTERED": bool,
     "CLOSE_TO_TRAY": bool,
     "AUTO_CHECK_UPDATE": bool,
+    "THEME": _theme_mode,
 }
 
 _SETTING_ATTRS = {
@@ -287,6 +298,7 @@ _SETTING_ATTRS = {
     "HIDE_PAST_REGISTERED": "hide_past_registered",
     "CLOSE_TO_TRAY": "close_to_tray",
     "AUTO_CHECK_UPDATE": "auto_check_update",
+    "THEME": "theme",
 }
 
 

@@ -42,8 +42,31 @@
 
   const displayVersion = (value) => {
     const text = String(value || "").trim().replace(/^v/i, "");
-    return text ? `v${text}` : "v1.0.3";
+    return text ? `v${text}` : "v1.1.0";
   };
+
+  // ---------------------------------------------------------------- 主题
+  const THEME_MODES = ["system", "light", "dark"];
+  const darkQuery = window.matchMedia
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : null;
+  let themeMode = "system";
+  // 刚点击主题、设置还没写回时，避免轮询用旧值把界面闪回去。
+  let themePending = null;
+
+  function resolveTheme(mode) {
+    if (mode === "dark" || mode === "light") return mode;
+    return darkQuery && darkQuery.matches ? "dark" : "light";
+  }
+
+  function applyTheme(mode) {
+    themeMode = THEME_MODES.includes(mode) ? mode : "system";
+    document.documentElement.dataset.theme = resolveTheme(themeMode);
+    document.querySelectorAll("[data-theme-mode]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.themeMode === themeMode);
+      btn.setAttribute("aria-pressed", btn.dataset.themeMode === themeMode ? "true" : "false");
+    });
+  }
 
   const duration = (seconds) => {
     if (!seconds || seconds <= 0) return "未记录";
@@ -54,6 +77,8 @@
   };
 
   function toast(title, content, isError) {
+    // 应用内通知不需要带上程序名前缀，标题本身就是完整信息。
+    title = String(title || "").replace(/^\[NSU-EventGrabber\]\s*/, "");
     // 同一条通知可能因为并发刷新/重复点击在极短时间内到达两次。
     // 这里做 1.6 秒的内容级去重，正常的后续提醒不会受影响。
     const key = `${isError ? "1" : "0"}\u0001${title}\u0001${content}`;
@@ -228,7 +253,7 @@
       const id = Number(notification.id);
       if (!Number.isFinite(id) || id <= notificationHighWater) continue;
       notificationHighWater = id;
-      toast(notification.title, notification.content, false);
+      toast(notification.title, notification.content, !!notification.is_error);
     }
     const nextCursor = Number(state.notifications_cursor);
     if (Number.isFinite(nextCursor)) {
@@ -245,13 +270,46 @@
     latestNoticeKey = "";
   }
 
+  // Release 正文是 Markdown：只处理标题、列表和粗体/代码，其余按纯文本显示。
+  function renderReleaseNotes(source) {
+    const inline = (text) =>
+      esc(text)
+        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+    return String(source || "")
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((raw) => raw.trim())
+      .filter((line, index, lines) => line || (index > 0 && lines[index - 1]))
+      .map((line) => {
+        if (!line) return "";
+        const heading = line.match(/^#{1,6}\s+(.*)$/);
+        if (heading) return `<div class="notes-heading">${inline(heading[1])}</div>`;
+        const bullet = line.match(/^[*\-+]\s+(.*)$/);
+        if (bullet) return `<div class="notes-item">${inline(bullet[1])}</div>`;
+        return `<div class="notes-line">${inline(line)}</div>`;
+      })
+      .join("");
+  }
+
   function renderUpdate(state) {
     const update = state.update || {};
     const text = $("updateState");
     const button = $("btnCheckUpdate");
     const badge = $("updateBadge");
     const version = $("aboutVersion");
+    const notes = $("updateNotes");
     if (!text || !button) return;
+    if (notes) {
+      const body = update.available && !update.checking ? String(update.notes || "").trim() : "";
+      if (body) {
+        notes.innerHTML = renderReleaseNotes(body);
+        notes.classList.remove("hidden");
+      } else {
+        notes.innerHTML = "";
+        notes.classList.add("hidden");
+      }
+    }
     const current = displayVersion(update.current || state.app_version);
     if (version) version.textContent = current;
     if (badge) {
@@ -299,8 +357,16 @@
     }
   }
 
+  function renderTheme(state) {
+    const mode = (state.config || {}).theme || "system";
+    if (themePending && themePending !== mode) return;
+    themePending = null;
+    applyTheme(mode);
+  }
+
   function render(state) {
     lastState = state;
+    renderTheme(state);
     renderAuth(state);
     renderStatus(state);
     renderTable(state);
@@ -421,6 +487,8 @@
 
   function fillSettings(state) {
     const cfg = state.config || {};
+    themePending = null;
+    applyTheme(cfg.theme || "system");
     switchSettingsTab("signup");
     $("setScanInterval").value = cfg.scan_interval ?? 300;
     $("setAutoRegister").checked = !!cfg.auto_register;
@@ -588,6 +656,16 @@
       toast("通知测试", (result && result.message) || "", !(result && result.ok));
     });
 
+    document.querySelectorAll("[data-theme-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.themeMode;
+        themePending = mode;
+        applyTheme(mode);
+        const bridge = api();
+        if (bridge) bridge.save_settings({ THEME: mode });
+      });
+    });
+
     $("btnResetSettings").addEventListener("click", async () => {
       if (!confirm("恢复默认设置会清除当前所有设置，登录状态不会退出。确定吗？")) return;
       const bridge = api();
@@ -686,6 +764,12 @@
       } catch (err) {
         // 单个 DOM 绑定失败不能阻断首次状态加载。
         console.error("界面绑定失败", err);
+      }
+      applyTheme("system");
+      if (darkQuery && darkQuery.addEventListener) {
+        darkQuery.addEventListener("change", () => {
+          if (themeMode === "system") applyTheme("system");
+        });
       }
       // 显式走 window，且输入框已改名，避免 DOM 命名属性遮蔽内置 setInterval。
       window.setInterval(tick, 1200);

@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "v1.0.3"
-  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.3' }}
+  APP_VERSION: "v1.1.0"
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }}
 
 jobs:
   test:
@@ -36,11 +36,12 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; updating title to $APP_VERSION"
-            gh release edit "$RELEASE_TAG" --title "NSU-EventGrabber $APP_VERSION" --notes "" --draft=false --latest=true
+            gh release edit "$RELEASE_TAG" --title "NSU-EventGrabber $APP_VERSION" \
+              --notes-file packaging/release-notes.md --draft=false --latest=true
           else
             gh release create "$RELEASE_TAG" \
               --title "NSU-EventGrabber $APP_VERSION" \
-              --notes ""
+              --notes-file packaging/release-notes.md
           fi
 
   windows:
@@ -192,7 +193,34 @@ jobs:
       - name: Build version manifest
         run: |
           mkdir -p site
-          python3 -c 'import json,os; from datetime import datetime,timezone; v=os.environ["APP_VERSION"]; t=os.environ["RELEASE_TAG"]; r=os.environ["GITHUB_REPOSITORY"]; m={"version":v,"tag":t,"name":f"NSU-EventGrabber {v}","url":f"https://github.com/{r}/releases/tag/{t}","published_at":datetime.now(timezone.utc).isoformat().replace("+00:00","Z")}; open("site/version.json","w",encoding="utf-8").write(json.dumps(m,ensure_ascii=False)); open("site/index.html","w",encoding="utf-8").write("<!doctype html><meta charset=utf-8><title>NSU-EventGrabber</title><p><a href=version.json>version.json</a></p>")'
+          python3 <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          v = os.environ["APP_VERSION"]
+          t = os.environ["RELEASE_TAG"]
+          r = os.environ["GITHUB_REPOSITORY"]
+          notes_path = "packaging/release-notes.md"
+          try:
+              n = open(notes_path, encoding="utf-8").read()
+          except FileNotFoundError:
+              n = ""
+
+          m = {
+              "version": v,
+              "tag": t,
+              "name": f"NSU-EventGrabber {v}",
+              "url": f"https://github.com/{r}/releases/tag/{t}",
+              "notes": n,
+              "published_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+          }
+          with open("site/version.json", "w", encoding="utf-8") as f:
+              json.dump(m, f, ensure_ascii=False)
+          with open("site/index.html", "w", encoding="utf-8") as f:
+              f.write('<meta charset=utf-8><title>NSU-EventGrabber</title>'
+                      '<p><a href=version.json>version.json</a></p>')
+          PY
       - uses: actions/configure-pages@v5
         with:
           enablement: true

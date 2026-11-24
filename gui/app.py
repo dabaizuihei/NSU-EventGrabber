@@ -103,6 +103,7 @@ class Controller:
             "url": "",
             "checked_at": 0.0,
             "error": "",
+            "notes": "",
         }
         self._last_reload_at = 0.0
         self.logout_flag = Path(self.cfg.data_dir) / "logged-out.flag"
@@ -316,11 +317,16 @@ class Controller:
         # 不在 JS API 的 get_state 轮询线程里做网络请求和文件写入，避免界面卡住。
         threading.Thread(target=apply_change, daemon=True).start()
 
-    def _push_notification(self, title: str, content: str) -> None:
+    def _push_notification(self, title: str, content: str, is_error: bool = False) -> None:
         with self._lock:
             self._notify_seq += 1
             self._notifications.append(
-                {"id": self._notify_seq, "title": title, "content": content}
+                {
+                    "id": self._notify_seq,
+                    "title": title,
+                    "content": content,
+                    "is_error": bool(is_error),
+                }
             )
             self._notifications = self._notifications[-50:]
 
@@ -374,6 +380,7 @@ class Controller:
                         "url": release.url,
                         "checked_at": checked_at,
                         "error": "",
+                        "notes": release.body,
                     }
                 )
             if available:
@@ -487,18 +494,26 @@ class Controller:
                 if result.error == "登录态失效":
                     self._auth_notified = True
                     self._push_notification(
-                        "[NSU-EventGrabber] 登录态失效",
+                        "登录态失效",
                         "请在界面上重新登录；登录后监控会自动恢复。",
+                        is_error=True,
                     )
-                    if self.cfg.auto_relogin and not self._login_open and not self.logout_flag.exists():
-                        self.push_log("INFO", "登录失效，打开登录窗口")
-                        self.login()
+                elif result.error == "未登录":
+                    self._push_notification(
+                        "扫描失败：未登录",
+                        "请先在客户端完成登录。",
+                        is_error=True,
+                    )
+                # 无论从未登录还是登录过期，只要开启了自动重登就弹登录窗。
+                if self.cfg.auto_relogin and not self._login_open and not self.logout_flag.exists():
+                    self.push_log("INFO", f"{result.error}，打开登录窗口")
+                    self.login()
             else:
                 self._auth_notified = False
                 for record in result.new_activities:
                     self.push_log("INFO", f"扫描到新活动：{activity_title(record)}")
             if result.title and result.changed:
-                self._push_notification(result.title, result.content)
+                self._push_notification(result.title, result.content, result.notify_error)
             self.runtime.state.save()
             self._refresh_gui()
             return {
@@ -613,7 +628,7 @@ class Controller:
             args=(epoch,),
             daemon=True,
         ).start()
-        return {"ok": True, "message": "登录窗口已打开，请完成登录"}
+        return {"ok": True, "message": "登录窗口已打开"}
 
     def _maybe_start_auto_monitor(self) -> None:
         """登录态可用且开启“打开软件自动监控”时，启动持续监控。"""

@@ -645,7 +645,7 @@ input:focus {
 .about-update {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-rows: auto 18px;
+  grid-template-rows: auto 18px auto;
   align-items: center;
   gap: 6px 10px;
   margin: 2px 0 10px;
@@ -714,6 +714,126 @@ input:focus {
   from { transform: translateX(12px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+
+/* ---------- 主题切换 ---------- */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.theme-option svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.theme-option:hover { color: var(--ink); }
+.theme-option.active { background: var(--panel); color: var(--accent-2); box-shadow: 0 1px 3px rgba(16, 24, 40, .1); }
+
+/* ---------- Release 更新内容 ---------- */
+.about-notes {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  max-height: 190px;
+  overflow: auto;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: normal;
+}
+.about-notes .notes-heading { margin: 2px 0 4px; font-weight: 600; color: var(--ink); }
+.about-notes .notes-heading:not(:first-child) { margin-top: 10px; }
+.about-notes .notes-item { position: relative; padding-left: 13px; color: var(--muted); }
+.about-notes .notes-item::before { content: "•"; position: absolute; left: 2px; color: var(--accent-2); }
+.about-notes .notes-line { color: var(--muted); }
+.about-notes b { color: var(--ink); font-weight: 600; }
+.about-notes code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+/* ---------- 深色主题 ---------- */
+html[data-theme="dark"] {
+  --bg: #0f141a;
+  --panel: #161d26;
+  --ink: #e6ebf2;
+  --muted: #94a2b3;
+  --line: #27313d;
+  --accent: #4c8dff;
+  --accent-2: #5c9bff;
+  --accent-soft: #1a2b45;
+  --warn: #eeb45e;
+  --warn-soft: #35290f;
+  --danger: #f2776c;
+  --danger-soft: #3a1c1a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px rgba(0, 0, 0, .45);
+  color-scheme: dark;
+}
+html[data-theme="dark"] .btn.primary { color: #fff; }
+html[data-theme="dark"] .btn.primary:hover { background: #3d7ce8; }
+html[data-theme="dark"] .btn.ghost { background: #1b232c; }
+html[data-theme="dark"] .btn.ghost:hover { background: #202a35; border-color: #34425a; }
+html[data-theme="dark"] .btn.danger { border-color: #5a2c28; }
+html[data-theme="dark"] .dot { background: #46525f; }
+html[data-theme="dark"] .pill { background: #1e2731; }
+html[data-theme="dark"] .pill i { background: #7d8794; }
+html[data-theme="dark"] .pill.on { background: #14301f; color: #5fd08a; }
+html[data-theme="dark"] .pill.on i { background: #5fd08a; }
+html[data-theme="dark"] .tabs { background: #10171e; }
+html[data-theme="dark"] .tab.active { background: #232d38; box-shadow: none; }
+html[data-theme="dark"] thead th { background: #131a21; }
+html[data-theme="dark"] tbody td { border-bottom-color: #202934; }
+html[data-theme="dark"] tbody tr:hover { background: #1a222b; }
+html[data-theme="dark"] .chip { background: #1e2731; }
+html[data-theme="dark"] .chip.registered { background: #14301f; color: #5fd08a; }
+html[data-theme="dark"] .chip.auditing { background: #35290f; color: #eeb45e; }
+html[data-theme="dark"] .chip.past { background: #1b2027; color: #7c8794; }
+html[data-theme="dark"] .log { color: #c3ccd8; }
+html[data-theme="dark"] .log-time { color: #6f7c8b; }
+html[data-theme="dark"] .footer,
+html[data-theme="dark"] .foot-link { color: #7c8794; }
+html[data-theme="dark"] .tip { color: #a7b3c1; }
+html[data-theme="dark"] input[type="text"],
+html[data-theme="dark"] input[type="number"],
+html[data-theme="dark"] select { background: #10161d; }
+html[data-theme="dark"] .tag-editor { background: #10161d; }
+html[data-theme="dark"] .tag-add { background: #1b232c; border-color: #3a4756; }
+html[data-theme="dark"] .switch span { background: #3a4552; }
+html[data-theme="dark"] .switch span::after { background: #e6ebf2; }
+html[data-theme="dark"] .modal-foot { background: #121920; }
+html[data-theme="dark"] .toast { background: #1b232c; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+html[data-theme="dark"] .theme-option.active { box-shadow: none; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #33404e; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #41505f; }
 
 /* ---------- 滚动条 ---------- */
 ::-webkit-scrollbar { width: 9px; height: 9px; }

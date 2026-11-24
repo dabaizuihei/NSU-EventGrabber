@@ -14,6 +14,16 @@ class SettingsDefaultsTest(unittest.TestCase):
         self.assertTrue(Config().close_to_tray)
         self.assertTrue(Config().auto_check_update)
 
+    def test_theme_defaults_to_system_and_validates_value(self) -> None:
+        self.assertEqual(Config().theme, "system")
+        with TemporaryDirectory() as tmp:
+            controller = Controller(data_dir=tmp)
+            controller.save_settings({"THEME": "dark"})
+            self.assertEqual(controller.cfg.theme, "dark")
+            # 非法值不写入运行时配置，统一回落到跟随系统。
+            controller.save_settings({"THEME": "rainbow"})
+            self.assertEqual(controller.cfg.theme, "system")
+
     def test_data_dir_config_env_is_default_source(self) -> None:
         with TemporaryDirectory() as tmp:
             Path(tmp, "config.env").write_text(

@@ -39,6 +39,8 @@ class ScanResult:
     content: str = ""
     summary: str = ""
     error: str = ""
+    # 本轮通知里是否包含失败项；应用内推送据此标红。
+    notify_error: bool = False
 
 
 # ---------------------------------------------------------------- 字段解析
@@ -246,14 +248,21 @@ def scan_once(cfg: Config, client, notifier, state, *, notify_auth_failure: bool
     result = ScanResult()
 
     if not client.ensure_login():
-        log.error("登录保活失败：Token失效")
-        result.error = "登录态失效"
-        if notify_auth_failure:
-            notifier.send(
-                "[NSU-EventGrabber] 登录态失效",
-                "access token 已失效，监控已暂停。\n"
-                "请打开客户端，点「登录」重新登录。",
-            )
+        # 区分“从未登录”和“token 已失效”：
+        # - 从未登录：不再输出“保活失败/无refresh token”这类多余日志，
+        #   只告诉上层扫描失败是因为未登录，由界面决定是否弹登录窗。
+        # - 已登录但 token 失效：保留原有日志和外部通知（邮件/IM）。
+        if getattr(client.auth, "access_token", ""):
+            log.error("登录保活失败：Token失效")
+            result.error = "登录态失效"
+            if notify_auth_failure:
+                notifier.send(
+                    "[NSU-EventGrabber] 登录态失效",
+                    "access token 已失效，监控已暂停。\n"
+                    "请打开客户端，点「登录」重新登录。",
+                )
+        else:
+            result.error = "未登录"
         return result
 
     try:
@@ -396,6 +405,7 @@ def scan_once(cfg: Config, client, notifier, state, *, notify_auth_failure: bool
     result.blocked_ids = blocked_new_ids
     result.full_ids = full_new_ids
     result.changed = changed
+    result.notify_error = any("报名失败" in message for _, message in reg_results)
 
     if not changed:
         state.save()

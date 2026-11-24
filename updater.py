@@ -28,6 +28,8 @@ class ReleaseInfo:
     url: str
     name: str
     published_at: str = ""
+    # Release 正文（Markdown）。清单优先，缺失时回退到 GitHub API。
+    body: str = ""
 
 
 def parse_version(value: str) -> tuple[int, ...]:
@@ -132,6 +134,7 @@ def _fetch_manifest(timeout: int) -> ReleaseInfo:
         url=str(payload.get("url") or RELEASES_URL),
         name=str(payload.get("name") or ""),
         published_at=str(payload.get("published_at") or ""),
+        body=str(payload.get("notes") or payload.get("body") or ""),
     )
 
 
@@ -182,6 +185,7 @@ def _fetch_api(timeout: int, cache_path: Optional[Path]) -> ReleaseInfo:
         url=str(payload.get("html_url") or RELEASES_URL),
         name=name,
         published_at=str(payload.get("published_at") or ""),
+        body=str(payload.get("body") or ""),
     )
     _write_cache(cache_path, etag, release)
     return release

@@ -391,7 +391,9 @@ class AuthManager:
             return False
         token = self.refresh_token
         if not token:
-            log.info("无refresh token，无法续期")
+            # 从未登录时静默返回；只有已登录但 refresh token 丢了才算异常。
+            if self.access_token:
+                log.info("无refresh token，无法续期")
             return False
         try:
             status, payload = self._request(
